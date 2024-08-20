@@ -49,25 +49,44 @@
   tasks:
     - name: Register undercloud variables
       set_fact:
+        stack_name: "overcloud"
         undercloud_backup_folder: "/home/stack/backup_keys/{{ ansible_date_time.epoch }}"
-        keys_folder: "/home/{{ ansible_user_id }}/.ssh"
-        key_name: "id_rsa"
+        #keys_folder: "/home/{{ ansible_user_id }}/.ssh"
+        #key_name: "id_rsa"
         key_size: "4096"
         tripleo_key_name: "id_rsa_tripleo"
         keep_old_key_authorized_keys: true
         rotate_undercloud_key: true
-        undercloud_public_key: "/home/{{ ansible_user_id }}/.ssh/id_rsa.pub"
+        #undercloud_public_key: "/home/{{ ansible_user_id }}/.ssh/id_rsa.pub"
     - name: Debug udercloud variables
       debug:
         msg:
+        - "{{ stack_name }}"
         - "{{ undercloud_backup_folder }}"
-        - "{{ keys_folder }}"
-        - "{{ key_name }}"
+        #- "{{ keys_folder }}"
+        #- "{{ key_name }}"
         - "{{ key_size }}"
         - "{{ tripleo_key_name }}"
         - "{{ keep_old_key_authorized_keys }}"
-        - "{{ undercloud_public_key }}"
+        #- "{{ undercloud_public_key }}"
         - "{{ rotate_undercloud_key }}"
+    - name: Read ssh key location
+      shell: |
+        for item in $(tail -1 /home/stack/overcloud-deploy/${stack_name}/cli-config-download/ansible-playbook-command.sh | tr "," "\n"); do if [[ "$item" =~ ansible_ssh_private_key_file.+ ]]; then echo $item | cut -d":" -f2 | tail -c +2 | head -c -2; fi; done;
+      register: ssh_key_path
+    - debug: var=ssh_key_path.stdout
+    - name: Get ssh key name
+      shell: |
+        echo {{ ssh_key_path.stdout }} | rev | cut -d"/" -f 1 | rev
+      register: ssh_key_name
+    - name: Register key_name
+      set_fact:
+        key_name: ssh_key_name.stdout
+    - debug: var=key_name
+    - name: Get ssh keys folder
+      set_fact:
+        keys_folder: "{{ ssh_key_path.stdout | regex_search('(.*)/' + ssh_key_name.stdout, '\\1') }}"
+    - debug: var=keys_folder
 
 - name: Initialize overcloud facts
   hosts: "{{ overcloud_group | default('allovercloud') }}"
@@ -99,6 +118,7 @@
     - name: Register undercloud new keys temp path
       set_fact:
         temp_folder: "{{ temp_folder.path }}"
+    - debug: var=temp_folder
     - name: Register undercloud new private key path
       set_fact:
         temp_private_key: "{{ temp_folder }}/{{ key_name }}"
